@@ -99,7 +99,18 @@ skipped this part
 - it will walk over the ring clockwise to replicate the data to N nodes which is called `preference list`
 - after data replicated to all nodes in preference list result will return to client.
 - since it will start walking N nodes those N nodes may not be exactly physical nodes (we divide the ring to virtual and physical nodes) so algorith skip the virtual nodes during the session.
-- 
+
+### Data Versioning
+- dynamodb is eventually consistent and eventually part is coming from how replication works internally.
+- put() replication happen asynchronously and before all replicas have the data client may already get the response. so subsequent get() calls may return out of date data.
+- amazon services works under these conditions /  it is ok for shopping cart surface that old items to resurface as long as writes are still there & operational.
+- dynamo uses Vector Clocks for this purpose, it is basically node -> counter mapping and allow to understand causality. (which caused which one or which one is a result of which kind of questions)
+- So each node will increment their counter (or timestamp)
+- As a result of get() we may get list of vector clocks for historical events.
+- if all counters on one vector clock is less than or equal the other first one is ancestor of second and can be ignored
+- if not they are parallel branches and need reconciliation.
+- [why vector clocks are hard](https://riak.com/posts/technical/why-vector-clocks-are-hard/index.html)
+- [why vector clocks are easy](https://riak.com/posts/technical/why-vector-clocks-are-easy/index.html)
 
 
 
