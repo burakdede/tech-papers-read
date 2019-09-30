@@ -49,6 +49,78 @@
 - This has the problem of rejecting writes if majority of cluster not available (not gonna work for Amazon)
 - Instead Dynamo pushes conflict resolution to reads and client so that client can decide what to do with versions (eg. merge)
 
+### Related Work
+skipped this part 
+
+## System Architecture
+- storage system like this need to deal with lots of things
+	- persisting
+	- scaling & partitioning
+	- membership detection
+	- failure detection & recovery
+	- replication
+	- request routing / load balancing
+	- requst marshaling & routing
+	- system monitoring & configuration management
+- paper does not touch all the topics though
+- partitioning: consistent hashing - incremental scalability
+- high availability for writes - vector clocks with read time conflict resolution - writes are always on
+- handling temporary failures - hinted hand off - give me your data for now I will it back to you later when you feel OK. 
+- recovering from permanent failures - merkle trees - fast way to check how off your data from other nodes
+- membership detection - gossip based protocol - no central membership registry
+
+### System Interface
+- small set of operations
+	- get(key)
+	- post(key, context, object)
+- key and object treatead as array of bytes
+- get(key) will take the key - hash it to find the node storing it in the ring of nodes and return single or list of conflicting items.
+- post(key, context, object) will take the key - hash it and find the place in ring of nodes - replicate it to N preference list and save to each node.
+- all ring walk happens in clockwise
+- it uses [Consisten Hashing](https://en.wikipedia.org/wiki/Consistent_hashing) to scale to hosts.
+- basically we are mapping key value via hash onto a ring of values.
+- advantage: if node leaves the ring only adjacent nodes effected not the rest of the system (they shared the load between each other)
+- when new node added also it will only effect the adjacent nodes in the ring by taking part of the their load.
+- considering N values in the ring with K hosts it will only take O(N/K) to remove or add host.
+- This is a good [visual explanation](https://www.youtube.com/watch?v=--4UgUPCuFM)
+
+> even simple consistent hashing load will not distrubte evently. Consider heterogeneity of machine, machine with more resources should not get the same load as machine with less. 
+
+- divide the ring into sections more than number of hosts (K being hosts N being sections N > K)
+- assign each host to multiple sections so each host will manage sections according to their machine capacity
+- not every point on the ring will be a physical host machine, they call it virtual nodes.
+
+> if we remove a node from the ring, the load or sections managed by this node will evenly distributed among other nodes. same applies if we add some other node it will get almost equal amount of load from other nodes. 
+
+
+### Replication
+- to achieve high availability and durability dynamo replicates the data to multiple hosts
+- when request reaches to destination node its that node responsibility to replicate it to others hence it is called `coordinator node`.
+- it will walk over the ring clockwise to replicate the data to N nodes which is called `preference list`
+- after data replicated to all nodes in preference list result will return to client.
+- since it will start walking N nodes those N nodes may not be exactly physical nodes (we divide the ring to virtual and physical nodes) so algorith skip the virtual nodes during the session.
+- 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
