@@ -113,6 +113,14 @@ skipped this part
 - [why vector clocks are easy](https://riak.com/posts/technical/why-vector-clocks-are-easy/index.html)
 
 
+#### Vector Clocks
+- helps us to tell causality relation in the system with multiple processes
+- consider there are N processes each process
+	- when sending a message or executing step increments its local vector clock for that process
+	- when receiving a message receiver process also increment its local vector clock and also merge max of the all other processes vector clocks.
+	- we don't know the order or turn of messages appear but each will cary its vector clock payload with itself. more space but allow us to tell which happened before or later.
+	- [nice visual explanation](https://www.youtube.com/watch?v=jD4ECsieFbE)
+
 
 
 
