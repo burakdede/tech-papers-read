@@ -139,6 +139,37 @@ skipped this part
 - quorum like system, N total number of preference list, R total number of read ACKs and W total number of write ACKs
 - if we set R + W > N it basically forms quorum system meaning that your are gonna read your writes (since there will be overlap on your reads vs writes)
 
+### Handling Failure : Hinted Handoff
+- during network partition if we keep the dynamo design as it is it would lead to data loss especially on writes.
+- instead when coordinator nodes looks for N-1 pref. list node it may not be able to reach that number because of network partitioning (eg. nodes being down in certain data center)
+- instead of going to actual N-1 host it may put the data to another host which is not in the preferences list. It also leaves metadata stating the original owner host of the data. This process called **hinted handoff**.
+- host that have the hinted data will store it in a different database and scan it down host periodically to replicate the data back to original owner.
+- Also most of the replication happens between different regions & data centers to achive more durability (as data centers can go down in different regions)
+
+### Handling Permanent Failures : Replica Sync.
+- sometimes even backup hosts can have a permanent problem so dynamo need to quickly tell if two host are out of sync.
+- for that dynamo uses **Merkle Tree** data structure. Basically every node keeps a merkle tree for all the set of key in their range.
+- keys start forming hashing from bottom to top. leaves are the individual hashes of the keys, parents are hashes of the hashes all the way to the root.
+- dynamo start checking root and work its way down to leaves if it find discrepancies between two hosts.
+- merkle tree make this operation faster and also data transfer for synchronization becomes smaller.
+- more info on [Merkle Trees](https://en.wikipedia.org/wiki/Merkle_tree)
+
+
+### Membership & Failure Detection
+- gossip based protocol means every second pick random host from the ring and exchange information about memberships
+- while doing that exchange also give information about which host owns which virtual nodes so that other nodes can redirect to correct coordinator node for read/write operations.
+- now when A joins to ring and B joins to ring they don't know each other so this may create logical partitions.
+- to prevent that when joining nodes get a static configuration via manually or some configuration service.
+- seeds are the name for these and they are fully functional nodes in the ring.
+
+- when node A tries to re-route request to node B and B is unresponsive to A (while responsive to C) A will periodically check B but eventually will mark it as unhealthy and will try other alternatives.
+- there is no need for global view of the failure state
+	- first every system will get the node addition and removal via seed nodes and central methods
+	- second communication failures between nodes will be propogated to system eventually.
+
+### Adding & Removing Nodes
+- when adding a node that node will receive number of tokens randomly selected from ring.
+- during this period 
 
 
 
