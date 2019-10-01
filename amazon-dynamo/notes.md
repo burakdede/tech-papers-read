@@ -121,6 +121,24 @@ skipped this part
 	- we don't know the order or turn of messages appear but each will cary its vector clock payload with itself. more space but allow us to tell which happened before or later.
 	- [nice visual explanation](https://www.youtube.com/watch?v=jD4ECsieFbE)
 
+- these can grow to certain extent but considering requests will be handled by N pref. list nodes it will be capped by that number (**except during the network partitions.**)
+
+
+### Exectuion of get() and put() opeartions
+- two options AWS generic HTTP load balance or partition aware client
+- second option causes less latency as it creates less network hop
+- put operation
+	- client directly redirect request to coordinator node
+	- coordinator node asks W number of node out of N-1 to confirm write
+	- depeding on how many reacable from the top N-1 list return result of all versions to client
+- get operation
+	- client directly redirect request to coordinator node
+	- coordinator node asks R number of node out of N-1 to confirm read
+	- depeding on how many reacable from the top N-1 return all versions to client
+
+- quorum like system, N total number of preference list, R total number of read ACKs and W total number of write ACKs
+- if we set R + W > N it basically forms quorum system meaning that your are gonna read your writes (since there will be overlap on your reads vs writes)
+
 
 
 
