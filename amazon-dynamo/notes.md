@@ -169,8 +169,21 @@ skipped this part
 
 ### Adding & Removing Nodes
 - when adding a node that node will receive number of tokens randomly selected from ring.
-- during this period 
+- during this period other nodes that is once responsible for respective keys start migrating their keys to newly added node with confirmation.
+- when removal happens reallocation of the keys happens by old nodes.
 
+
+## Implementation
+- each node has the following responsibilities, request routing, membership, failure detection and persistance
+- for persistance dynamodb has pluggable enginer you can use berkley db or mysql depending on your data patterns. (berkley db is good for small object sizes while mysql has advantage for big ones) (all implemented in java)
+- each node coordinating the request keep a state machine.
+- for read starting with coordinator node
+	- re-route request to N-1 nodes for replication
+	- wait for min required number of responses
+	- if it can't reach to min within time bound fail req.
+	- if it reaches pack all versions & do reconciliation & respond.
+
+- almost same process for write but any top N nodes can be coordinator and will be chosen based on their latest read response times (fastest wins as it will help to quickly respond to following read operation - read your write)
 
 
 
