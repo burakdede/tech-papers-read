@@ -9,11 +9,13 @@
 
 
 ## Initial Decisions
+
 - key:value store. why? well most of their data access does not require joins or relational queries, mostly primary key based data access (eg. shopping cart, top seller list, user preferences...)
 - lets sacrifice consistency for availability, we are fine with item popping up or disappearing all of a sudden (fix it with good customer support I guesss)
 
 
 ## Background
+
 - stateless service: that aggregates results from other services
 - statefull service: results comes from exeucting business logic which recent state stored in persistent store.
 - traditionally most services use relational data stores
@@ -23,12 +25,14 @@
 	- still not highly scalable replication techniques to fit to their needs
 
 ### System Assumptions & Requirements
+
 - Query Model: Simple read & write by key value, no operations spanning multiple items and no join like requirements
 - ACID Properties: (atomicity, consistency, isolation, durability). In order to provide high availability dynamo have weaker consistency property. ACID property providing data stores generally are not very good at availability portion. No isolation guarentees with certain consistency window.
 - 99.9 percentile defines the SLAs so it should easily run on commodity hardware and scale out.
 - No autohrization, authentication since it will run in non-hostile env.
 
 ### SLAs
+
 - hundred services calling/depeding other tens of services, sort of like a call graph. Some are aggregators with aggressive caching other statefull.
 - client - server agreement
 - client provides peak request distribution and server need to respond within bounded time
@@ -37,6 +41,7 @@
 - Amazon chooses %99.9 to cover customers with long history with platform
 
 ### Design Considerations
+
 - most well known systems (RDMS) especially with ACID properties favor consistency over availability.
 - with network partitioning you can get both strong consistency and high availability.
 - those systems make data unavailable until they are sure that it is consistent across cluster. (not gonna work for Amazon)
@@ -49,10 +54,12 @@
 - This has the problem of rejecting writes if majority of cluster not available (not gonna work for Amazon)
 - Instead Dynamo pushes conflict resolution to reads and client so that client can decide what to do with versions (eg. merge)
 
-### Related Work
+### Related Work
+
 skipped this part 
 
 ## System Architecture
+
 - storage system like this need to deal with lots of things
 	- persisting
 	- scaling & partitioning
@@ -70,6 +77,7 @@ skipped this part
 - membership detection - gossip based protocol - no central membership registry
 
 ### System Interface
+
 - small set of operations
 	- get(key)
 	- post(key, context, object)
@@ -93,14 +101,16 @@ skipped this part
 > if we remove a node from the ring, the load or sections managed by this node will evenly distributed among other nodes. same applies if we add some other node it will get almost equal amount of load from other nodes. 
 
 
-### Replication
+### Replication
+
 - to achieve high availability and durability dynamo replicates the data to multiple hosts
 - when request reaches to destination node its that node responsibility to replicate it to others hence it is called `coordinator node`.
 - it will walk over the ring clockwise to replicate the data to N nodes which is called `preference list`
 - after data replicated to all nodes in preference list result will return to client.
 - since it will start walking N nodes those N nodes may not be exactly physical nodes (we divide the ring to virtual and physical nodes) so algorith skip the virtual nodes during the session.
 
-### Data Versioning
+### Data Versioning
+
 - dynamodb is eventually consistent and eventually part is coming from how replication works internally.
 - put() replication happen asynchronously and before all replicas have the data client may already get the response. so subsequent get() calls may return out of date data.
 - amazon services works under these conditions /  it is ok for shopping cart surface that old items to resurface as long as writes are still there & operational.
@@ -113,7 +123,8 @@ skipped this part
 - [why vector clocks are easy](https://riak.com/posts/technical/why-vector-clocks-are-easy/index.html)
 
 
-#### Vector Clocks
+#### Vector Clocks
+
 - helps us to tell causality relation in the system with multiple processes
 - consider there are N processes each process
 	- when sending a message or executing step increments its local vector clock for that process
@@ -124,7 +135,8 @@ skipped this part
 - these can grow to certain extent but considering requests will be handled by N pref. list nodes it will be capped by that number (**except during the network partitions.**)
 
 
-### Exectuion of get() and put() opeartions
+### Exectuion of get() and put() opeartions
+
 - two options AWS generic HTTP load balance or partition aware client
 - second option causes less latency as it creates less network hop
 - put operation
@@ -139,14 +151,16 @@ skipped this part
 - quorum like system, N total number of preference list, R total number of read ACKs and W total number of write ACKs
 - if we set R + W > N it basically forms quorum system meaning that your are gonna read your writes (since there will be overlap on your reads vs writes)
 
-### Handling Failure : Hinted Handoff
+### Handling Failure : Hinted Handoff
+
 - during network partition if we keep the dynamo design as it is it would lead to data loss especially on writes.
 - instead when coordinator nodes looks for N-1 pref. list node it may not be able to reach that number because of network partitioning (eg. nodes being down in certain data center)
 - instead of going to actual N-1 host it may put the data to another host which is not in the preferences list. It also leaves metadata stating the original owner host of the data. This process called **hinted handoff**.
 - host that have the hinted data will store it in a different database and scan it down host periodically to replicate the data back to original owner.
 - Also most of the replication happens between different regions & data centers to achive more durability (as data centers can go down in different regions)
 
-### Handling Permanent Failures : Replica Sync.
+### Handling Permanent Failures : Replica Sync.
+
 - sometimes even backup hosts can have a permanent problem so dynamo need to quickly tell if two host are out of sync.
 - for that dynamo uses **Merkle Tree** data structure. Basically every node keeps a merkle tree for all the set of key in their range.
 - keys start forming hashing from bottom to top. leaves are the individual hashes of the keys, parents are hashes of the hashes all the way to the root.
@@ -155,7 +169,8 @@ skipped this part
 - more info on [Merkle Trees](https://en.wikipedia.org/wiki/Merkle_tree)
 
 
-### Membership & Failure Detection
+### Membership & Failure Detection
+
 - gossip based protocol means every second pick random host from the ring and exchange information about memberships
 - while doing that exchange also give information about which host owns which virtual nodes so that other nodes can redirect to correct coordinator node for read/write operations.
 - now when A joins to ring and B joins to ring they don't know each other so this may create logical partitions.
@@ -168,12 +183,14 @@ skipped this part
 	- second communication failures between nodes will be propogated to system eventually.
 
 ### Adding & Removing Nodes
+
 - when adding a node that node will receive number of tokens randomly selected from ring.
 - during this period other nodes that is once responsible for respective keys start migrating their keys to newly added node with confirmation.
 - when removal happens reallocation of the keys happens by old nodes.
 
 
 ## Implementation
+
 - each node has the following responsibilities, request routing, membership, failure detection and persistance
 - for persistance dynamodb has pluggable enginer you can use berkley db or mysql depending on your data patterns. (berkley db is good for small object sizes while mysql has advantage for big ones) (all implemented in java)
 - each node coordinating the request keep a state machine.
@@ -185,29 +202,28 @@ skipped this part
 
 - almost same process for write but any top N nodes can be coordinator and will be chosen based on their latest read response times (fastest wins as it will help to quickly respond to following read operation - read your write)
 
+## Experiences & Lessons Learned
+
+- dynamodb has several configurations for reconciliation
+	- business logic based : client decides how to reconcile multiple versions like shopping cart merging them
+	- time based : this is basically last write wins type, session service works with this
+	- high perf. read : you basically set R = 1 and all reads will be really quick and you set your W = N where your writes takes time and durable. product catalog and promotion lists are based on this config
+- you can decide which configuration by changing client settings.
+- quorum states that for consistent R and W, N >= R + W so for 5 node cluster W = 4 and R = 3 will result in overlap and you can at least guarantee you will read your writes.
+- amazon common configurat for N, W, R is (3, 2, 2)
+- each host connected by high speed networks and of course effected by latencies.
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
