@@ -3,9 +3,10 @@
 
 ## Motivation 
 
-- Amazon wants to keep their server up and running in the midst of network failures, natural disasters even tornados.
+- Amazon wants to keep their server up and running in the midst of network failures, natural disasters even tornados destroying data centers.
 - They have very strict uptime requirements %99.99 and each downtime cost them a lot of money and customer unsatisfaction.
-- Built a system even during failures that we can write and read from by **sacrificing consistency**.
+- Build a system even during failures that we can write and read from by **sacrificing consistency**.
+- It is possible to build a reliable, high performance and eventually consistent storage system and use it on production with demanding apps.
 
 
 ## Initial Decisions
@@ -43,7 +44,7 @@
 ### Design Considerations
 
 - most well known systems (RDMS) especially with ACID properties favor consistency over availability.
-- with network partitioning you can get both strong consistency and high availability.
+- with network partitioning you can't get both strong consistency and high availability.
 - those systems make data unavailable until they are sure that it is consistent across cluster. (not gonna work for Amazon)
 - during problems they may even reject writes to cluster (not gonna work for Amazon)
 - Amazon choose to design it in a way that system will work with optimistic replication & async. in the background.
@@ -80,7 +81,7 @@ skipped this part
 
 - small set of operations
 	- get(key)
-	- post(key, context, object)
+	- put(key, context, object)
 - key and object treatead as array of bytes
 - get(key) will take the key - hash it to find the node storing it in the ring of nodes and return single or list of conflicting items.
 - post(key, context, object) will take the key - hash it and find the place in ring of nodes - replicate it to N preference list and save to each node.
@@ -88,7 +89,6 @@ skipped this part
 - it uses [Consisten Hashing](https://en.wikipedia.org/wiki/Consistent_hashing) to scale to hosts.
 - basically we are mapping key value via hash onto a ring of values.
 - advantage: if node leaves the ring only adjacent nodes effected not the rest of the system (they shared the load between each other)
-- when new node added also it will only effect the adjacent nodes in the ring by taking part of the their load.
 - considering N values in the ring with K hosts it will only take O(N/K) to remove or add host.
 - This is a good [visual explanation](https://www.youtube.com/watch?v=--4UgUPCuFM)
 
@@ -113,8 +113,8 @@ skipped this part
 
 - dynamodb is eventually consistent and eventually part is coming from how replication works internally.
 - put() replication happen asynchronously and before all replicas have the data client may already get the response. so subsequent get() calls may return out of date data.
-- amazon services works under these conditions /  it is ok for shopping cart surface that old items to resurface as long as writes are still there & operational.
-- dynamo uses Vector Clocks for this purpose, it is basically node -> counter mapping and allow to understand causality. (which caused which one or which one is a result of which kind of questions)
+- amazon services works under these conditions /  it is ok for shopping cart service that old items to resurface as long as writes are still there & operational. (at most they sell extra item and say sorry & refund)
+- dynamo uses Vector Clocks for this purpose, it is basically node -> counter mapping and allow to understand causality.
 - So each node will increment their counter (or timestamp)
 - As a result of get() we may get list of vector clocks for historical events.
 - if all counters on one vector clock is less than or equal the other first one is ancestor of second and can be ignored
@@ -137,17 +137,16 @@ skipped this part
 
 ### Exectuion of get() and put() opeartions
 
-- two options AWS generic HTTP load balance or partition aware client
-- second option causes less latency as it creates less network hop
+- two options AWS generic HTTP load balancer or partition aware client
+- second option causes less latency as it results in less network hop
 - put operation
 	- client directly redirect request to coordinator node
-	- coordinator node asks W number of node out of N-1 to confirm write
-	- depeding on how many reacable from the top N-1 list return result of all versions to client
+	- coordinator node asks W number of node out of N-1 to confirm write (W: being min number of write ACK from nodes)
+	- depeding on how many reachable from the top N-1 list return result of all data versions to client
 - get operation
 	- client directly redirect request to coordinator node
-	- coordinator node asks R number of node out of N-1 to confirm read
-	- depeding on how many reacable from the top N-1 return all versions to client
-
+	- coordinator node asks R number of node out of N-1 to confirm read (R: being min number of read ACK from nodes)
+	- depeding on how many reachable from the top N-1 return all versions to client (with vector clocks for receonciliation)
 - quorum like system, N total number of preference list, R total number of read ACKs and W total number of write ACKs
 - if we set R + W > N it basically forms quorum system meaning that your are gonna read your writes (since there will be overlap on your reads vs writes)
 
@@ -156,7 +155,7 @@ skipped this part
 - during network partition if we keep the dynamo design as it is it would lead to data loss especially on writes.
 - instead when coordinator nodes looks for N-1 pref. list node it may not be able to reach that number because of network partitioning (eg. nodes being down in certain data center)
 - instead of going to actual N-1 host it may put the data to another host which is not in the preferences list. It also leaves metadata stating the original owner host of the data. This process called **hinted handoff**.
-- host that have the hinted data will store it in a different database and scan it down host periodically to replicate the data back to original owner.
+- host that have the hinted data will store it in a different database and scan failed host periodically to replicate the data back to original owner.
 - Also most of the replication happens between different regions & data centers to achive more durability (as data centers can go down in different regions)
 
 ### Handling Permanent Failures : Replica Sync.
@@ -179,8 +178,8 @@ skipped this part
 
 - when node A tries to re-route request to node B and B is unresponsive to A (while responsive to C) A will periodically check B but eventually will mark it as unhealthy and will try other alternatives.
 - there is no need for global view of the failure state
-	- first every system will get the node addition and removal via seed nodes and central methods
-	- second communication failures between nodes will be propogated to system eventually.
+	- first, every system will get the node addition and removal via seed nodes and central methods
+	- second, communication failures between nodes will be propogated to system eventually.
 
 ### Adding & Removing Nodes
 
